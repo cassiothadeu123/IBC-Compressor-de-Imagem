@@ -1,0 +1,124 @@
+name: Build and test installers
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  QT_VERSION: 6.8.3
+  APP_VERSION: 0.1.0
+
+jobs:
+  windows:
+    name: Windows 10/11 x64
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          modules: qtimageformats
+          cache: true
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test engine
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Install application
+        run: cmake --install build --prefix "${{ github.workspace }}/stage" --config Release
+      - name: Verify executable and deploy runtime
+        shell: pwsh
+        run: |
+          $exe = "${{ github.workspace }}\stage\bin\IBCImageCompressor.exe"
+          if (!(Test-Path $exe)) { throw "Executável não foi gerado" }
+          windeployqt --release --qmldir "${{ github.workspace }}\qml" --compiler-runtime $exe
+          if ($LASTEXITCODE -ne 0) { throw "windeployqt falhou" }
+      - name: Launch smoke test
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $exe = "${{ github.workspace }}\stage\bin\IBCImageCompressor.exe"
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 5
+          if ($process.HasExited -and $process.ExitCode -ne 0) { throw "Aplicativo encerrou com erro $($process.ExitCode)" }
+          if (!$process.HasExited) { Stop-Process -Id $process.Id }
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+      - name: Create Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force "${{ github.workspace }}\artifacts" | Out-Null
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DStageDir=${{ github.workspace }}\stage" "/DOutputDir=${{ github.workspace }}\artifacts" "/DAppVersion=${{ env.APP_VERSION }}" "packaging\windows\IBCCompressor.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Criação do instalador falhou" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IBC-Compressor-Windows-x64
+          path: artifacts/*.exe
+          if-no-files-found: error
+
+  macos:
+    name: macOS Universal Intel and Apple Silicon
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: qtimageformats
+          cache: true
+      - name: Configure Universal build
+        run: >-
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON
+          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test engine
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Install application
+        run: cmake --install build --prefix "$GITHUB_WORKSPACE/stage" --config Release
+      - name: Deploy Qt and verify Universal binary
+        run: |
+          APP="$GITHUB_WORKSPACE/stage/IBCImageCompressor.app"
+          test -d "$APP"
+          macdeployqt "$APP" -qmldir="$GITHUB_WORKSPACE/qml" -always-overwrite
+          codesign --force --deep --sign - "$APP"
+          file "$APP/Contents/MacOS/IBCImageCompressor" | tee architecture.txt
+          grep -q "x86_64" architecture.txt
+          grep -q "arm64" architecture.txt
+      - name: Launch smoke test
+        run: |
+          export QT_QPA_PLATFORM=offscreen
+          APP="$GITHUB_WORKSPACE/stage/IBCImageCompressor.app"
+          "$APP/Contents/MacOS/IBCImageCompressor" >launch.log 2>&1 &
+          PID=$!
+          sleep 5
+          if ! kill -0 "$PID" 2>/dev/null; then
+            wait "$PID"
+            test $? -eq 0
+          else
+            kill "$PID"
+            wait "$PID" || true
+          fi
+      - name: Create DMG
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/dmg-root" "$GITHUB_WORKSPACE/artifacts"
+          cp -R "$GITHUB_WORKSPACE/stage/IBCImageCompressor.app" "$GITHUB_WORKSPACE/dmg-root/IBC Compressor de Imagem.app"
+          ln -s /Applications "$GITHUB_WORKSPACE/dmg-root/Applications"
+          hdiutil create -volname "IBC Compressor de Imagem" -srcfolder "$GITHUB_WORKSPACE/dmg-root" -ov -format UDZO "$GITHUB_WORKSPACE/artifacts/IBC-Compressor-de-Imagem-macOS-Universal.dmg"
+          hdiutil verify "$GITHUB_WORKSPACE/artifacts/IBC-Compressor-de-Imagem-macOS-Universal.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IBC-Compressor-macOS-Universal
+          path: artifacts/*.dmg
+          if-no-files-found: error
