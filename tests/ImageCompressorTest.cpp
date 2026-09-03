@@ -1,6 +1,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QImage>
+#include <QImageReader>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
