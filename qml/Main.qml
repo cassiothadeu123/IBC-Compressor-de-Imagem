@@ -299,7 +299,7 @@ ApplicationWindow {
             Layout.fillWidth: true
             Text { text: "Tecnologia IBC Hertz • Compressão adaptativa local"; color: "#56737d"; font.pixelSize: 11 }
             Item { Layout.fillWidth: true }
-            Text { text: "v0.1.0"; color: "#56737d"; font.pixelSize: 11 }
+            Text { text: "v0.1.1"; color: "#56737d"; font.pixelSize: 11 }
         }
     }
 }

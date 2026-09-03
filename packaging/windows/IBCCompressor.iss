@@ -13,17 +13,17 @@ AppId={{A8668E30-8053-48FA-A55B-E7344345A296}
 AppName=IBC Compressor de Imagem
 AppVersion={#AppVersion}
 AppPublisher=Instituto Biofísica da Consciência
-DefaultDirName={autopf}\IBC Compressor de Imagem
+DefaultDirName={localappdata}\Programs\IBC Compressor de Imagem
 DefaultGroupName=IBC Compressor de Imagem
 DisableProgramGroupPage=yes
 OutputDir={#OutputDir}
-OutputBaseFilename=IBC-Compressor-de-Imagem-Windows-x64-Setup
+OutputBaseFilename=IBC-Compressor-de-Imagem-Windows-x64-v0.1.1-Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\IBCImageCompressor.exe
 
 [Files]

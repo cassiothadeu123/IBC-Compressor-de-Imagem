@@ -10,7 +10,7 @@ permissions:
 
 env:
   QT_VERSION: 6.8.3
-  APP_VERSION: 0.1.0
+  APP_VERSION: 0.1.1
 
 jobs:
   windows:
@@ -43,11 +43,16 @@ jobs:
       - name: Launch smoke test
         shell: pwsh
         run: |
+          Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:QML_IMPORT_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:QT_ROOT_DIR -ErrorAction SilentlyContinue
           $env:QT_QPA_PLATFORM = "offscreen"
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
           $exe = "${{ github.workspace }}\stage\bin\IBCImageCompressor.exe"
           $process = Start-Process -FilePath $exe -PassThru
           Start-Sleep -Seconds 5
-          if ($process.HasExited -and $process.ExitCode -ne 0) { throw "Aplicativo encerrou com erro $($process.ExitCode)" }
+          if ($process.HasExited) { throw "Aplicativo encerrou durante o teste isolado. Código: $($process.ExitCode)" }
           if (!$process.HasExited) { Stop-Process -Id $process.Id }
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
@@ -57,10 +62,30 @@ jobs:
           New-Item -ItemType Directory -Force "${{ github.workspace }}\artifacts" | Out-Null
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DStageDir=${{ github.workspace }}\stage" "/DOutputDir=${{ github.workspace }}\artifacts" "/DAppVersion=${{ env.APP_VERSION }}" "packaging\windows\IBCCompressor.iss"
           if ($LASTEXITCODE -ne 0) { throw "Criação do instalador falhou" }
+          Compress-Archive -Path "${{ github.workspace }}\stage\bin\*" -DestinationPath "${{ github.workspace }}\artifacts\IBC-Compressor-de-Imagem-Windows-x64-v0.1.1-Portable.zip" -CompressionLevel Optimal
+      - name: Install and test packaged version
+        shell: pwsh
+        run: |
+          $installer = "${{ github.workspace }}\artifacts\IBC-Compressor-de-Imagem-Windows-x64-v0.1.1-Setup.exe"
+          $installDir = "${{ runner.temp }}\IBC-Installed"
+          $setup = Start-Process -FilePath $installer -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=$installDir" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Instalação real falhou. Código: $($setup.ExitCode)" }
+          Remove-Item Env:QT_PLUGIN_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:QML_IMPORT_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:QT_ROOT_DIR -ErrorAction SilentlyContinue
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot;$env:SystemRoot\System32\Wbem"
+          $app = Start-Process -FilePath "$installDir\IBCImageCompressor.exe" -PassThru
+          Start-Sleep -Seconds 5
+          if ($app.HasExited) { throw "Aplicativo instalado encerrou. Código: $($app.ExitCode)" }
+          Stop-Process -Id $app.Id
       - uses: actions/upload-artifact@v4
         with:
           name: IBC-Compressor-Windows-x64
-          path: artifacts/*.exe
+          path: |
+            artifacts/*.exe
+            artifacts/*.zip
           if-no-files-found: error
 
   macos:
